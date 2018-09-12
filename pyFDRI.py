@@ -47,8 +47,6 @@ import skimage.transform
 import skimage
 import time
 
-# 2D DCT
-# DCT is applied to rows of X. DCT is applied again to the columns of the resulting matrix.
 def dct2(x):
     """
     DCT is applied to rows of X. DCT is applied again to the columns of the resulting matrix
@@ -97,15 +95,18 @@ def AvgDCTSpectrum(dim, img_path, warning=True):
         
     return AvgDCT
 
-def SelectionMatrix(k, AvgDCT):
+def SelectionMatrix(k, AvgDCT, deterministic=False):
     """
     Create a (logical) selection matrix SM for the DCT basis
     with k true elements at the selected DCT basis
     Selection is random with with the Bernoulli probabilities proportional to AvgDCT 
     """
-    R = np.random.random(AvgDCT.shape) * AvgDCT
-    # R = AvgDCT # instead we could select the largest coefficients deterministically
-    R[0,0] = AvgDCT[0,0] # make sure to include the zeroth frequency
+    if (deterministic):
+        R = AvgDCT 
+    else:
+        R = np.random.random(AvgDCT.shape) * AvgDCT
+    # Add the zeroth frequency into selection
+    R[0,0] = AvgDCT[0,0] 
     Idx = np.argsort(R.flat)
     SM = np.zeros(AvgDCT.shape,np.bool).flatten()
     SM[Idx[-k:]] = True
@@ -124,12 +125,11 @@ def MeasurementMatrix(SM,binarize=False):
     P = np.arange(SM.size)
     P = P[SM.flat]
 
-    # put the respective DCT basis in every row of M
+    # Put the respective DCT basis in every row of M
     for r in range(m_rows):
         eye = np.zeros(dim)
         eye.flat[P[r]] = 1.0
         M[r,:] = idct2(eye).flatten()
-        # M(r,:)=cos(pi*(2*m+1)*p/(2*M)).*cos(pi*(2*n+1)*q/(2*N));
         if binarize:
             M[r,:] = (M[r,:] >= M[r,:].mean()).astype(np.float)
     return M
@@ -158,55 +158,55 @@ def fdri(M,Nx,Ny,mi=0.5,ep=1e-5,method=0):
     k = M.size / Nx / Ny
     M = np.reshape(M,(int(k), Nx*Ny))
 
-    # calculate the diagonal elements of hat(Gamma) according to Eq. (11)
+    # Calculate the diagonal elements of hat(Gamma) according to Eq. (11)
     ry = np.hstack((np.arange(0,Ny/2), np.arange(-Ny/2,0)))
     rx = np.hstack((np.arange(0,Nx/2), np.arange(-Nx/2,0)))  
     wx, wy = np.meshgrid(2*np.pi/Nx*rx, 2*np.pi/Ny*ry)
     D = 1.0 / np.sqrt((1 - mi)**2 * (np.sin(wx)**2 + np.sin(wy)**2) + ep + mi**2 * (wx**2 + wy**2) / (2*np.pi**2))
 
-    # helper functions - apply 2D DFT to images stored in rows or columns of a matrix X
+    # Helper functions - apply 2D DFT to images stored in rows or columns of a matrix X
     row_fft2 = lambda X: np.fft.fft2(X.reshape((-1,Ny,Nx))).reshape((-1,Ny*Nx))       # size of X is [k, n*n], fft2 is applied to rows
     row_ifft2 = lambda X: np.fft.ifft2(X.reshape((-1,Ny,Nx))).reshape((-1,Ny*Nx))     # size of X is [k, n*n], ifft2 is applied to rows
     col_fft2 = lambda X: np.fft.fft2(X.T.reshape((-1,Ny,Nx))).reshape((-1,Ny*Nx)).T   # size of X is [n*n,k], fft2 is applied to columns
     col_ifft2 = lambda X: np.fft.ifft2(X.T.reshape((-1,Ny,Nx))).reshape((-1,Ny*Nx)).T # size of X is [n*n,k], ifft2 is applied to columns
     
-    # helper functions - apply 2D linear filtering to a matrix X
+    # Helper functions - apply 2D linear filtering to a matrix X
     FILT_R = lambda X: row_fft2(row_ifft2(X) @ spdiags(D.flat,0,Nx*Ny,Nx*Ny)) # X * F' * D  * F
     FILT_L = lambda X: col_fft2(spdiags(D.flat,0,Nx*Ny,Nx*Ny) @ col_ifft2(X)) # F * D  * F' * X
 
     # Now calculate the generalized inverse matrix P
     a = np.real(FILT_R(M))
     if (method == 1):
-    # calculate the inversion matrix with Eq. (8)
+    # Calculate the inversion matrix with Eq. (8)
         P = FILT_L(np.linalg.pinv(a))
     elif (method == 2):
-    # use svd to calculate the pseudoinverse, and then use Eq. (8):
+    # Use SVD to calculate the pseudoinverse, and then use Eq. (8):
         U, S, Vh = np.linalg.svd (a,0) #a = U*S*Vh
         P = FILT_L( np.asarray(np.asmatrix(Vh).getH()) @ np.diag(1/S) @ np.asarray(np.asmatrix(U).getH()))
     else:
-    # calculate the inversion matrix with Eq. (7) - default
+    # Calculate the inversion matrix with Eq. (7) - default
         a = np.asmatrix(a)
         P = np.real(FILT_L(np.asarray(a.getH() @ (np.linalg.inv(a @ a.getH())))))
     return P
 
 if __name__ == "__main__":
-    print("Fourier Domain Regularized Inversion (FDRI) example.")
-    # all images will be resized to NxN pixels
+    print("Fourier Domain Regularized Inversion (FDRI) example.\n")
+    # All images will be resized to NxN pixels
     N = 256          
 
-    # number of basis functions (the compression ratio is equal to k/N^2)
+    # Number of basis functions (the compression ratio is equal to k/N^2)
     k = 1966         
 
     # FDRI parameter mi (Eq. 11)
     mi = 0.5         
 
-    # use binarized or continuous DCT functions for the measurement matrix 
+    # Use binarized or continuous DCT functions for the measurement matrix 
     binarize = True  
 
-    # path to images
+    # Path to images
     img_path = "./images/"
 
-    # path to the test image
+    # Path to the test image
     images = ["bird512.jpg"]
 
     scene_path = img_path + images[0]
@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     dim = (N, N)
 
-    print("I. Preparation Stage")
+    print("\nI. Preparation Stage")
     print("1. calculate the average DCT spectrum using an image database...")
     AvgDCT = AvgDCTSpectrum(dim, img_path,False)
 
@@ -233,7 +233,7 @@ if __name__ == "__main__":
           "(takes some time)...")
     P = fdri(M,dim[1],dim[0],mi)
 
-    print("II. COMPRESSIVE MEASUREMENT")
+    print("\nII. COMPRESSIVE MEASUREMENT")
     print("1. Prepare the scene...")
     im = imageio.imread(scene_path).astype(np.float)
     im = im / im.max()
